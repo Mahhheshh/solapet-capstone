@@ -182,6 +182,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "anchor-instruction-sysvar"
+version = "0.1.0"
+source = "git+https://github.com/ShrinathNR/anchor-instruction-sysvar.git?branch=version-upgrade#644326618efec7ebc5356339e6b2bb0176ddb795"
+dependencies = [
+ "anchor-lang",
+ "solana-program",
+]
+
+[[package]]
 name = "anchor-lang"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2031,6 +2040,7 @@ dependencies = [
 name = "solapet-capstone"
 version = "0.1.0"
 dependencies = [
+ "anchor-instruction-sysvar",
  "anchor-lang",
  "anchor-spl",
 ]
