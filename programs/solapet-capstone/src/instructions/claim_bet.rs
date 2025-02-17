@@ -3,7 +3,7 @@ use anchor_lang::{
     system_program::{transfer, Transfer},
 };
 
-use crate::PetDuel;
+use crate::{error::ErrorCode, PetDuel};
 
 #[derive(Accounts)]
 pub struct ClaimBetAmount<'info> {
@@ -17,6 +17,7 @@ pub struct ClaimBetAmount<'info> {
         mut,
         seeds = [b"pet_duel", challanger.key().as_ref()],
         bump = pet_duel_account.bump,
+        close = challanger
     )]
     pub pet_duel_account: Account<'info, PetDuel>,
 
@@ -31,6 +32,10 @@ pub struct ClaimBetAmount<'info> {
 
 impl<'info> ClaimBetAmount<'info> {
     pub fn claim(&mut self, bumps: &ClaimBetAmountBumps) -> Result<()> {
+        require!(
+            self.pet_duel_account.winner == Some(self.winner.key()),
+            ErrorCode::UnauthorizedAction
+        );
         let cpi_program = self.system_program.to_account_info();
 
         let cpi_accounts = Transfer {
