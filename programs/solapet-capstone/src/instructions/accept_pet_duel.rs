@@ -3,7 +3,7 @@ use anchor_lang::{
     system_program::{transfer, Transfer},
 };
 
-use crate::{GameConfig, PetDuel, PetStats, error::ErrorCode};
+use crate::{error::ErrorCode, GameConfig, PetDuel, PetStats};
 
 #[derive(Accounts)]
 pub struct AcceptPetDuel<'info> {
@@ -31,7 +31,7 @@ pub struct AcceptPetDuel<'info> {
         bump = pet_stats.bump
     )]
     pub pet_stats: Account<'info, PetStats>,
-    
+
     #[account(
         mut,
         seeds = [b"pet_duel", challenger.key().as_ref()],
@@ -44,7 +44,8 @@ pub struct AcceptPetDuel<'info> {
 
 impl<'info> AcceptPetDuel<'info> {
     pub fn accept_duel(&mut self) -> Result<()> {
-        require!(self.pet_stats.energy >= 20, ErrorCode::InsufficientPetEnergy);
+        let updated_pet_energy = self.pet_stats.update_pet_energy()?;
+        require!(updated_pet_energy >= 20, ErrorCode::InsufficientPetEnergy);
         self.pet_duel_account.accept_duel(self.defender.key())?;
         Ok(())
     }

@@ -43,7 +43,8 @@ pub struct InitPetDuel<'info> {
 
 impl<'info> InitPetDuel<'info> {
     pub fn initilize(&mut self, bumps: &InitPetDuelBumps, bet_amount: u64) -> Result<()> {
-        require!(self.pet_stats.energy >= 20, ErrorCode::InsufficientPetEnergy);
+        let updated_pet_energy = self.pet_stats.update_pet_energy()?;
+        require!(updated_pet_energy >= 20, ErrorCode::InsufficientPetEnergy);
         self.pet_duel_account.set_inner(PetDuel {
             challenger: self.challanger.key(),
             defender: Pubkey::default().key(),
