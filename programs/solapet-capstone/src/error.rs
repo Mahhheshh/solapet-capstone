@@ -26,6 +26,8 @@ pub enum ErrorCode {
     StatAlreadyMax,
     #[msg("Interaction not allowed in current pet state.")]
     InteractionNotAllowed,
+    #[msg("Pet needs rest. Wait for energy to replenish.")]
+    InsufficientPetEnergy,
 
     #[msg("Duel already challenged.")]
     DuelAlreadyChallenged,

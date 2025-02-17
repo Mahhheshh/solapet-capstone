@@ -3,7 +3,7 @@ use anchor_lang::{
     system_program::{transfer, Transfer},
 };
 
-use crate::{DuelStatus, GameConfig, PetDuel};
+use crate::{DuelStatus, GameConfig, PetDuel, PetStats, error::ErrorCode};
 
 #[derive(Accounts)]
 pub struct InitPetDuel<'info> {
@@ -22,7 +22,13 @@ pub struct InitPetDuel<'info> {
         bump
     )]
     pub game_vault: SystemAccount<'info>,
-    
+
+    #[account(
+        seeds = [b"stats", challanger.key().as_ref()],
+        bump = pet_stats.bump
+    )]
+    pub pet_stats: Account<'info, PetStats>,
+
     #[account(
         init,
         payer = challanger,
@@ -37,6 +43,7 @@ pub struct InitPetDuel<'info> {
 
 impl<'info> InitPetDuel<'info> {
     pub fn initilize(&mut self, bumps: &InitPetDuelBumps, bet_amount: u64) -> Result<()> {
+        require!(self.pet_stats.energy >= 20, ErrorCode::InsufficientPetEnergy);
         self.pet_duel_account.set_inner(PetDuel {
             challenger: self.challanger.key(),
             defender: Pubkey::default().key(),
