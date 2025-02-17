@@ -64,7 +64,7 @@ pub mod solapet_capstone {
     }
 
     pub fn claim_bet(ctx: Context<ClaimBetAmount>) -> Result<()> {
-        ctx.accounts.claim(&ctx.bumps)?;
+        ctx.accounts.claim()?;
         Ok(())
     }
 }

@@ -3,7 +3,7 @@ use anchor_lang::{
     system_program::{transfer, Transfer},
 };
 
-use crate::{error::ErrorCode, PetDuel};
+use crate::{error::ErrorCode, GameConfig, PetDuel};
 
 #[derive(Accounts)]
 pub struct ClaimBetAmount<'info> {
@@ -12,6 +12,12 @@ pub struct ClaimBetAmount<'info> {
 
     /// CHECK: ?
     pub challanger: AccountInfo<'info>,
+
+    #[account(
+        seeds = [b"game_config"],
+        bump = game_config.bump
+    )]
+    pub game_config: Account<'info, GameConfig>,
 
     #[account(
         mut,
@@ -23,7 +29,7 @@ pub struct ClaimBetAmount<'info> {
 
     #[account(
         seeds = [b"vault"],
-        bump
+        bump = game_config.vault_bump
     )]
     pub game_vault: SystemAccount<'info>,
 
@@ -31,7 +37,7 @@ pub struct ClaimBetAmount<'info> {
 }
 
 impl<'info> ClaimBetAmount<'info> {
-    pub fn claim(&mut self, bumps: &ClaimBetAmountBumps) -> Result<()> {
+    pub fn claim(&mut self) -> Result<()> {
         require!(
             self.pet_duel_account.winner == Some(self.winner.key()),
             ErrorCode::UnauthorizedAction
@@ -43,11 +49,20 @@ impl<'info> ClaimBetAmount<'info> {
             to: self.winner.to_account_info(),
         };
 
-        let signer_seeds: &[&[&[u8]]] = &[&[b"vault", &[bumps.game_vault]]];
+        let signer_seeds: &[&[&[u8]]] = &[&[b"vault", &[self.game_config.vault_bump]]];
 
         let cpi_context = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
 
-        transfer(cpi_context, self.pet_duel_account.bet_amount)?;
+        let bet_amount = self.pet_duel_account.bet_amount;
+
+        let deduced_amount = bet_amount
+            .checked_mul(self.game_config.fees as u64)
+            .unwrap()
+            .checked_div(100)
+            .unwrap();
+
+        let transferable_amount = bet_amount.saturating_sub(deduced_amount);
+        transfer(cpi_context, transferable_amount)?;
 
         Ok(())
     }
