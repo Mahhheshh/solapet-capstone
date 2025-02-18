@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{associated_token::AssociatedToken, token::{transfer_checked, Mint, Token, TokenAccount, TransferChecked}};
+use anchor_spl::{associated_token::AssociatedToken, token::{Mint, Token, TokenAccount, transfer, Transfer}};
 
 use crate::{GameConfig, PetStats};
 
@@ -8,12 +8,15 @@ pub struct DepositNft<'info> {
     #[account(mut)]
     pub player: Signer<'info>,
 
-    pub collection_mint: Account<'info, Mint>,
+    pub collection_mint: Account<'info, Mint>, // collection_mint
 
-    pub player_ata: Account<'info, TokenAccount>,
+    pub nft_mint: Account<'info, Mint>, // the nft mint
+
+    #[account(mut)]
+    pub player_ata: Account<'info, TokenAccount>, // users token account holding pet nft
 
     #[account(
-        seeds = [b"config"],
+        seeds = [b"game_config"],
         bump = config.bump,
         constraint = config.collection_mint.as_ref() == collection_mint.key().as_ref()
     )]
@@ -22,10 +25,11 @@ pub struct DepositNft<'info> {
     #[account(
         init, 
         payer = player, 
-        associated_token::mint = collection_mint,
-        associated_token::authority = config
+        associated_token::mint = nft_mint,
+        associated_token::authority = config,
+        associated_token::token_program = token_program,
     )]
-    pub game_ata: Account<'info, TokenAccount>,
+    pub destination: Account<'info, TokenAccount>,
 
     #[account(
         init,
@@ -43,19 +47,18 @@ pub struct DepositNft<'info> {
 
 impl<'info> DepositNft<'info> {
 
-    pub fn deposit_nft(&mut self) -> Result<()> { 
-        let cpi_accounts = TransferChecked {
-            from: self.player_ata.to_account_info(),
-            to: self.game_ata.to_account_info(),
-            authority: self.player.to_account_info(),
-            mint: self.collection_mint.to_account_info(),
-        };
+    pub fn deposit_nft(&mut self) -> Result<()> {
         let cpi_program = self.token_program.to_account_info();
 
-        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        let cpi_accounts = Transfer {
+            from: self.player_ata.to_account_info(),
+            to: self.destination.to_account_info(),
+            authority: self.player.to_account_info(),
+        };
 
-        transfer_checked(cpi_ctx, 1, self.collection_mint.decimals)?;
-
+        let cpi_context = CpiContext::new(cpi_program, cpi_accounts);
+        
+        transfer(cpi_context, 1)?;
         Ok(())
     }
 
