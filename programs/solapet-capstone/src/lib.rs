@@ -64,7 +64,15 @@ pub mod solapet_capstone {
     }
 
     pub fn claim_bet(ctx: Context<ClaimBetAmount>) -> Result<()> {
-        ctx.accounts.claim()?;
+        require!(
+            ctx.accounts.pet_duel_account.winner.is_some()
+                && ctx.accounts.winner.key() == ctx.accounts.pet_duel_account.winner.unwrap(),
+            error::ErrorCode::UnauthorizedAction
+        );
+        if ctx.accounts.pet_duel_account.bet_amount > 0 {
+            msg!("bet amount greater than zero, claming");
+            ctx.accounts.claim()?;
+        }
         Ok(())
     }
 }

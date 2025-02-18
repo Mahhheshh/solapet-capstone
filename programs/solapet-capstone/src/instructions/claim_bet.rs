@@ -23,7 +23,7 @@ pub struct ClaimBetAmount<'info> {
         mut,
         seeds = [b"pet_duel", challanger.key().as_ref()],
         bump = pet_duel_account.bump,
-        close = challanger
+        close = winner
     )]
     pub pet_duel_account: Account<'info, PetDuel>,
 
@@ -39,10 +39,6 @@ pub struct ClaimBetAmount<'info> {
 
 impl<'info> ClaimBetAmount<'info> {
     pub fn claim(&mut self) -> Result<()> {
-        require!(
-            self.pet_duel_account.winner == Some(self.winner.key()),
-            ErrorCode::UnauthorizedAction
-        );
         let cpi_program = self.system_program.to_account_info();
 
         let cpi_accounts = Transfer {

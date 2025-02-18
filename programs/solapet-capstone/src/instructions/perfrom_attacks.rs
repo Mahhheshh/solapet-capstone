@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{error::ErrorCode, verify_ed25519_signature, PetDuel};
+use crate::{error::ErrorCode, PetDuel};
 
 #[derive(Accounts)]
 pub struct PetAttack<'info> {
