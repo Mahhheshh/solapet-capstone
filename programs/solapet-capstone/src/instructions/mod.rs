@@ -1,6 +1,9 @@
 pub mod init_config;
 pub use init_config::*;
 
+pub mod update_fees;
+pub use update_fees::*;
+
 pub mod deposite_nft;
 pub use deposite_nft::*;
 

@@ -22,6 +22,11 @@ pub mod solapet_capstone {
         Ok(())
     }
 
+    pub fn update_fees(ctx: Context<UpdateFees>, fees: u8) -> Result<()> {
+        ctx.accounts.update_fees(fees)?;
+        Ok(())
+    }
+
     pub fn init_player(ctx: Context<DepositNft>) -> Result<()> {
         ctx.accounts.deposit_nft()?;
         ctx.accounts.init_pet_stats(&ctx.bumps)?;
@@ -58,7 +63,7 @@ pub mod solapet_capstone {
     }
 
     pub fn pet_attack(ctx: Context<PetAttack>, sig: Vec<u8>) -> Result<()> {
-        verify_ed25519_signature(&ctx.accounts.instructions_sysvar.to_account_info(), &sig)?;
+        // verify_ed25519_signature(&ctx.accounts.instructions_sysvar.to_account_info(), &sig)?;
         ctx.accounts.attack(&sig)?;
         Ok(())
     }
