@@ -10,10 +10,13 @@ pub struct WithdrawNFT<'info> {
 
     pub collection_mint: Account<'info, Mint>,
 
+    pub nft_mint: Account<'info, Mint>, 
+
+    #[account(mut)]
     pub player_ata: Account<'info, TokenAccount>,
 
     #[account(
-        seeds = [b"config"],
+        seeds = [b"game_config"],
         bump = config.bump,
         constraint = config.collection_mint.as_ref() == collection_mint.key().as_ref()
     )]
@@ -22,8 +25,9 @@ pub struct WithdrawNFT<'info> {
     #[account(
         mut, 
         close = player,
-        associated_token::mint = collection_mint,
-        associated_token::authority = config
+        associated_token::mint = nft_mint,
+        associated_token::authority = config,
+        associated_token::token_program = token_program,
     )]
     pub game_ata: Account<'info, TokenAccount>,
 
@@ -38,7 +42,6 @@ pub struct WithdrawNFT<'info> {
     pub system_program: Program<'info, System>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Program<'info, Token>,
-
 }
 
 impl<'info> WithdrawNFT<'info> {
@@ -47,17 +50,26 @@ impl<'info> WithdrawNFT<'info> {
 
         let cpi_accounts = TransferChecked {
             from: self.game_ata.to_account_info(),
-            mint: self.collection_mint.to_account_info(),
+            mint: self.nft_mint.to_account_info(),
             to: self.player_ata.to_account_info(),
             authority: self.config.to_account_info(),
         };
 
-        let cpi_ctx = CpiContext::new(
+        let signer_seeds: &[&[&[u8]]] = &[
+            &[
+                b"game_config",
+                &[self.config.bump]
+            ]
+        ];
+
+
+        let cpi_ctx = CpiContext::new_with_signer(
             cpi_program,
-            cpi_accounts
+            cpi_accounts,
+            signer_seeds
         );
 
-        transfer_checked(cpi_ctx, 1, self.collection_mint.decimals)?;
+        transfer_checked(cpi_ctx, 1, self.nft_mint.decimals)?;
         Ok(())
     }
 }
