@@ -28,6 +28,7 @@ pub struct ClaimBetAmount<'info> {
     pub pet_duel_account: Account<'info, PetDuel>,
 
     #[account(
+        mut,
         seeds = [b"vault"],
         bump = game_config.vault_bump
     )]
