@@ -78,8 +78,10 @@ pub enum ErrorCode {
     #[msg("Generic error.")]
     GenericError,
 
-    #[msg("Account not provided")]
-    AccountNotProvided,
+    #[msg("Ed25519 program ID does not match")]
+    Ed25519PrigramIdMissMatch,
+    #[msg("Instruction account length must be zero")]
+    InstructionAccountLengthNotZero,
     #[msg("Invalid signature format")]
     InvalidSig,
     #[msg("Signature length does not match expected length")]

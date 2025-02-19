@@ -10,16 +10,18 @@ use crate::error::ErrorCode;
 pub fn verify_ed25519_signature(instruction_account: &AccountInfo,sig: &[u8]) -> Result<()> {
     let ix = load_instruction_at_checked(0, &instruction_account)?;
 
-    require_keys_eq!(ix.program_id, ed25519_program::ID, ErrorCode::InvalidSig);
+    msg!("{}", ix.program_id);
 
-    require_eq!(ix.accounts.len(), 0, ErrorCode::InvalidSig);
+    require_keys_eq!(ix.program_id, ed25519_program::ID, ErrorCode::Ed25519PrigramIdMissMatch);
+
+    require_eq!(ix.accounts.len(), 0, ErrorCode::InstructionAccountLengthNotZero);
 
     let signatures = Ed25519InstructionSignatures::unpack(&ix.data)?.0;
 
-    require_eq!(signatures.len(), 1, ErrorCode::InvalidSig);
+    require_eq!(signatures.len(), 1, ErrorCode::InvalidSigLength);
     let signature = &signatures[0];
 
-    require!(signature.is_verifiable, ErrorCode::InvalidSig);
+    require!(signature.is_verifiable, ErrorCode::SignatureNotVerified);
 
     require!(signature.signature.unwrap().eq(sig), ErrorCode::InvalidSig);
 
