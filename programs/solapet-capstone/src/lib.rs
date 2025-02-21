@@ -27,8 +27,13 @@ pub mod solapet_capstone {
         Ok(())
     }
 
+    pub fn mint_pet(ctx: Context<MintPetNft>, uri: String) -> Result<()> {
+        ctx.accounts.mint_pet_nft(uri)?;
+        Ok(())
+    }
+
     pub fn init_player(ctx: Context<DepositNft>) -> Result<()> {
-        ctx.accounts.deposit_nft()?;
+        // ctx.accounts.freeze_nft()?;
         ctx.accounts.init_pet_stats(&ctx.bumps)?;
         Ok(())
     }

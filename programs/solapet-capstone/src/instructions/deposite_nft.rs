@@ -1,7 +1,18 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{associated_token::AssociatedToken, token::{Mint, Token, TokenAccount, transfer, Transfer}};
+use anchor_spl::token::{Mint, Token, TokenAccount};
 
 use crate::{GameConfig, PetStats};
+use mpl_token_metadata::{
+    types::DelegateArgs,
+    instructions::{
+        DelegateCpiAccounts, 
+        DelegateInstructionArgs, 
+        DelegateCpi,
+        LockV1CpiAccounts,
+        LockV1InstructionArgs,
+        LockV1Cpi
+    }
+};
 
 #[derive(Accounts)]
 pub struct DepositNft<'info> {
@@ -10,6 +21,7 @@ pub struct DepositNft<'info> {
 
     pub collection_mint: Account<'info, Mint>, // collection_mint
 
+    #[account(mut)]
     pub nft_mint: Account<'info, Mint>, // the nft mint
 
     #[account(mut)]
@@ -22,14 +34,24 @@ pub struct DepositNft<'info> {
     )]
     pub config: Account<'info, GameConfig>,
 
-    #[account(
-        init, 
-        payer = player, 
-        associated_token::mint = nft_mint,
-        associated_token::authority = config,
-        associated_token::token_program = token_program,
-    )]
-    pub destination: Account<'info, TokenAccount>,
+    /// Master edition account for the NFT
+    /// CHECK: Validated by the Metaplex token metadata program
+    #[account(mut)]
+    pub master_edition: UncheckedAccount<'info>,
+
+    /// Metadata account for the NFT
+    /// CHECK: Validated by the Metaplex token metadata program
+    #[account(mut)]
+    pub metadata: UncheckedAccount<'info>,
+
+    /// The Metaplex token metadata program
+    /// CHECK: This is the Metaplex Token Metadata Program
+    #[account(address = mpl_token_metadata::ID)]
+    pub token_metadata_program: UncheckedAccount<'info>,
+
+    /// CHECK: Address is validated to be the instructions sysvar
+    #[account(address = anchor_lang::solana_program::sysvar::instructions::id())]
+    pub sysvar_instructions: UncheckedAccount<'info>,
 
     #[account(
         init,
@@ -41,24 +63,76 @@ pub struct DepositNft<'info> {
     pub pet_stats: Account<'info, PetStats>,
 
     pub system_program: Program<'info, System>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Program<'info, Token>,
 }
 
 impl<'info> DepositNft<'info> {
+    pub fn freeze_nft(&mut self) -> Result<()> {    
+        let spl_token_program_info = &self.token_program.to_account_info();
+        let player_info = &self.player.to_account_info();
+        let master_edition = &self.master_edition.to_account_info();
+        let player_ata = self.player_ata.to_account_info();
 
-    pub fn deposit_nft(&mut self) -> Result<()> {
-        let cpi_program = self.token_program.to_account_info();
-
-        let cpi_accounts = Transfer {
-            from: self.player_ata.to_account_info(),
-            to: self.destination.to_account_info(),
-            authority: self.player.to_account_info(),
+        // First delegate authority to the game config
+        let delegate_accounts = DelegateCpiAccounts {
+            delegate: &self.config.to_account_info(),
+            metadata: &self.metadata,
+            master_edition: Some(master_edition),
+            token_record: None,
+            mint: &self.nft_mint.to_account_info(),
+            token: Some(&player_ata), 
+            authority: player_info,
+            payer: player_info,
+            system_program: &self.system_program.to_account_info(),
+            sysvar_instructions: &self.sysvar_instructions,
+            spl_token_program: Some(spl_token_program_info),
+            authorization_rules_program: None,
+            authorization_rules: None,
+            delegate_record: None,
         };
 
-        let cpi_context = CpiContext::new(cpi_program, cpi_accounts);
-        
-        transfer(cpi_context, 1)?;
+        let delegate_args = DelegateInstructionArgs {
+            delegate_args: DelegateArgs::StakingV1 {
+                amount: 1,
+                authorization_data: None
+            }
+        };
+
+        DelegateCpi::new(
+            &self.token_metadata_program,
+            delegate_accounts,
+            delegate_args
+        ).invoke()?;
+
+        // Then lock the NFT
+        let lock_accounts = LockV1CpiAccounts {
+            authority: &self.config.to_account_info(),
+            token_owner: Some(player_info),
+            token: &self.player_ata.to_account_info(),
+            mint: &self.nft_mint.to_account_info(),
+            metadata: &self.metadata,
+            edition: Some(master_edition),
+            token_record: None,
+            system_program: &self.system_program.to_account_info(),
+            sysvar_instructions: &self.sysvar_instructions,
+            spl_token_program: Some(spl_token_program_info),
+            authorization_rules_program: None,
+            authorization_rules: None,
+            payer: player_info,
+        };
+
+        let lock_args = LockV1InstructionArgs {
+            authorization_data: None,
+        };
+
+        let signer_seeds: &[&[&[u8]]] = &[&[b"game_config", &[self.config.bump]]];
+
+        LockV1Cpi::new(
+            &self.token_metadata_program,
+            lock_accounts,
+            lock_args
+        ).invoke_signed(signer_seeds)?;
+                
         Ok(())
     }
 
