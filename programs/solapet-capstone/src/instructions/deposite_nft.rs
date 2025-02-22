@@ -1,19 +1,11 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
-use crate::{GameConfig, PetStats};
-use mpl_token_metadata::{
-    types::DelegateArgs,
-    instructions::{
-        DelegateCpiAccounts, 
-        DelegateInstructionArgs, 
-        DelegateCpi,
-        LockV1CpiAccounts,
-        LockV1InstructionArgs,
-        LockV1Cpi
-    }
+use mpl_token_metadata::instructions::{
+    DelegateStandardV1Cpi, DelegateStandardV1CpiAccounts, DelegateStandardV1InstructionArgs, LockV1Cpi, LockV1CpiAccounts, LockV1InstructionArgs
 };
 
+use crate::{GameConfig, PetStats};
 #[derive(Accounts)]
 pub struct DepositNft<'info> {
     #[account(mut)]
@@ -68,71 +60,66 @@ pub struct DepositNft<'info> {
 
 impl<'info> DepositNft<'info> {
     pub fn freeze_nft(&mut self) -> Result<()> {    
-        let spl_token_program_info = &self.token_program.to_account_info();
+        let master_edition_info = &self.master_edition.to_account_info();
         let player_info = &self.player.to_account_info();
-        let master_edition = &self.master_edition.to_account_info();
-        let player_ata = self.player_ata.to_account_info();
+        let token_program_info = &self.token_program.to_account_info();
+        let player_ata_info = &self.player_ata.to_account_info();
+        
+        let signers_seeds: &[&[&[u8]]] = &[&[b"game_config", &[self.config.bump]]];
 
-        // First delegate authority to the game config
-        let delegate_accounts = DelegateCpiAccounts {
-            delegate: &self.config.to_account_info(),
-            metadata: &self.metadata,
-            master_edition: Some(master_edition),
-            token_record: None,
-            mint: &self.nft_mint.to_account_info(),
-            token: Some(&player_ata), 
-            authority: player_info,
-            payer: player_info,
+        let cpi_accounts = DelegateStandardV1CpiAccounts {
+            delegate_record: None, 
+            delegate: &self.config.to_account_info(), // give access to the config
+            metadata: &self.metadata.to_account_info(), 
+            master_edition: Some(master_edition_info), 
+            token_record: None, 
+            mint: &self.nft_mint.to_account_info(), 
+            token: player_ata_info, 
+            authority: player_info, 
+            payer: player_info, 
             system_program: &self.system_program.to_account_info(),
-            sysvar_instructions: &self.sysvar_instructions,
-            spl_token_program: Some(spl_token_program_info),
+            sysvar_instructions: &self.sysvar_instructions.to_account_info(), 
+            spl_token_program: Some(token_program_info), 
             authorization_rules_program: None,
-            authorization_rules: None,
-            delegate_record: None,
+            authorization_rules: None, 
         };
 
-        let delegate_args = DelegateInstructionArgs {
-            delegate_args: DelegateArgs::StakingV1 {
-                amount: 1,
-                authorization_data: None
-            }
+        let cpi_args = DelegateStandardV1InstructionArgs {
+            amount: 1,
         };
 
-        DelegateCpi::new(
-            &self.token_metadata_program,
-            delegate_accounts,
-            delegate_args
-        ).invoke()?;
-
-        // Then lock the NFT
-        let lock_accounts = LockV1CpiAccounts {
+        DelegateStandardV1Cpi::new(
+            &self.token_metadata_program.to_account_info(),
+            cpi_accounts,
+            cpi_args,
+        ).invoke_signed(&signers_seeds)?;
+        
+        let cpi_accounts = LockV1CpiAccounts {
+            mint: &self.nft_mint.to_account_info(),
             authority: &self.config.to_account_info(),
-            token_owner: Some(player_info),
-            token: &self.player_ata.to_account_info(),
-            mint: &self.nft_mint.to_account_info(),
-            metadata: &self.metadata,
-            edition: Some(master_edition),
-            token_record: None,
+            payer: player_info, 
             system_program: &self.system_program.to_account_info(),
-            sysvar_instructions: &self.sysvar_instructions,
-            spl_token_program: Some(spl_token_program_info),
+            token_owner: Some(player_info),
+            token: player_ata_info, 
+            metadata: &self.metadata.to_account_info(),
+            edition: Some(master_edition_info),
+            token_record: None,
+            sysvar_instructions: &self.sysvar_instructions.to_account_info(),
+            spl_token_program: Some(token_program_info), 
             authorization_rules_program: None,
             authorization_rules: None,
-            payer: player_info,
         };
 
-        let lock_args = LockV1InstructionArgs {
+        let cpi_args = LockV1InstructionArgs {
             authorization_data: None,
         };
 
-        let signer_seeds: &[&[&[u8]]] = &[&[b"game_config", &[self.config.bump]]];
-
         LockV1Cpi::new(
-            &self.token_metadata_program,
-            lock_accounts,
-            lock_args
-        ).invoke_signed(signer_seeds)?;
-                
+            &self.token_metadata_program.to_account_info(),
+            cpi_accounts,
+            cpi_args
+        ).invoke_signed(&signers_seeds)?;
+        
         Ok(())
     }
 

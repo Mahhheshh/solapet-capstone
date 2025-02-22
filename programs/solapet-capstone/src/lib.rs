@@ -33,7 +33,7 @@ pub mod solapet_capstone {
     }
 
     pub fn init_player(ctx: Context<DepositNft>) -> Result<()> {
-        // ctx.accounts.freeze_nft()?;
+        ctx.accounts.freeze_nft()?;
         ctx.accounts.init_pet_stats(&ctx.bumps)?;
         Ok(())
     }

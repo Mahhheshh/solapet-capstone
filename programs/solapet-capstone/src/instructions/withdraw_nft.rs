@@ -1,5 +1,9 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{associated_token::AssociatedToken, token::{transfer_checked, Mint, Token, TokenAccount, TransferChecked}};
+use anchor_spl::token::{Mint, Token, TokenAccount};
+use mpl_token_metadata::instructions::{
+    RevokeStandardV1Cpi, RevokeStandardV1CpiAccounts, UnlockV1Cpi, UnlockV1CpiAccounts,
+    UnlockV1InstructionArgs,
+};
 
 use crate::{GameConfig, PetStats};
 
@@ -8,12 +12,13 @@ pub struct WithdrawNFT<'info> {
     #[account(mut)]
     pub player: Signer<'info>,
 
-    pub collection_mint: Account<'info, Mint>,
-
-    pub nft_mint: Account<'info, Mint>, 
+    pub collection_mint: Account<'info, Mint>, // collection_mint
 
     #[account(mut)]
-    pub player_ata: Account<'info, TokenAccount>,
+    pub nft_mint: Account<'info, Mint>, // the nft mint
+
+    #[account(mut)]
+    pub player_ata: Account<'info, TokenAccount>, // users token account holding pet nft
 
     #[account(
         seeds = [b"game_config"],
@@ -22,14 +27,19 @@ pub struct WithdrawNFT<'info> {
     )]
     pub config: Account<'info, GameConfig>,
 
-    #[account(
-        mut, 
-        close = player,
-        associated_token::mint = nft_mint,
-        associated_token::authority = config,
-        associated_token::token_program = token_program,
-    )]
-    pub game_ata: Account<'info, TokenAccount>,
+    /// Master edition account for the NFT
+    /// CHECK: Validated by the Metaplex token metadata program
+    #[account(mut)]
+    pub master_edition: UncheckedAccount<'info>,
+
+    /// Metadata account for the NFT
+    /// CHECK: Validated by the Metaplex token metadata program
+    #[account(mut)]
+    pub metadata: UncheckedAccount<'info>,
+
+    /// CHECK: Address is validated to be the instructions sysvar
+    #[account(address = anchor_lang::solana_program::sysvar::instructions::id())]
+    pub sysvar_instructions: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -39,37 +49,71 @@ pub struct WithdrawNFT<'info> {
     )]
     pub pet_stats: Account<'info, PetStats>,
 
-    pub system_program: Program<'info, System>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
+    /// The Metaplex token metadata program
+    /// CHECK: This is the Metaplex Token Metadata Program
+    #[account(address = mpl_token_metadata::ID)]
+    pub token_metadata_program: UncheckedAccount<'info>,
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 impl<'info> WithdrawNFT<'info> {
     pub fn withdraw(&mut self) -> Result<()> {
-        let cpi_program = self.token_program.to_account_info();
+        let player_ata = &self.player_ata.to_account_info();
+        let master_edition = &self.master_edition.to_account_info();
+        let metadata = &self.metadata.to_account_info();
+        let sysvar_instructions = &self.sysvar_instructions.to_account_info();
+        let token_program = &self.token_program.to_account_info();
 
-        let cpi_accounts = TransferChecked {
-            from: self.game_ata.to_account_info(),
-            mint: self.nft_mint.to_account_info(),
-            to: self.player_ata.to_account_info(),
-            authority: self.config.to_account_info(),
+        let cpi_accounts = UnlockV1CpiAccounts {
+            mint: &self.nft_mint.to_account_info(),
+            token: player_ata,
+            token_owner: Some(player_ata),
+            token_record: None,
+            edition: Some(master_edition),
+            metadata: metadata,
+            authority: &self.config.to_account_info(),
+            payer: &self.player.to_account_info(),
+            system_program: &self.system_program.to_account_info(),
+            sysvar_instructions: sysvar_instructions,
+            spl_token_program: Some(token_program),
+            authorization_rules_program: None,
+            authorization_rules: None,
+        };
+        let cpi_args = UnlockV1InstructionArgs {
+            authorization_data: None,
         };
 
-        let signer_seeds: &[&[&[u8]]] = &[
-            &[
-                b"game_config",
-                &[self.config.bump]
-            ]
-        ];
+        let signers_seeds: &[&[&[u8]]] = &[&[b"game_config", &[self.config.bump]]];
 
-
-        let cpi_ctx = CpiContext::new_with_signer(
-            cpi_program,
+        UnlockV1Cpi::new(
+            &self.token_metadata_program.to_account_info(),
             cpi_accounts,
-            signer_seeds
-        );
+            cpi_args,
+        )
+        .invoke_signed(signers_seeds)?;
 
-        transfer_checked(cpi_ctx, 1, self.nft_mint.decimals)?;
+        // Revoke the delegate standard v1
+        let cpi_accounts = RevokeStandardV1CpiAccounts {
+            delegate_record: None,
+            delegate: &self.config.to_account_info(),
+            metadata: metadata,
+            master_edition: Some(master_edition),
+            token_record: None,
+            mint: &self.nft_mint.to_account_info(),
+            token: player_ata,
+            authority: &self.player.to_account_info(),
+            payer: &self.player.to_account_info(),
+            system_program: &self.system_program.to_account_info(),
+            sysvar_instructions: sysvar_instructions,
+            spl_token_program: Some(token_program),
+            authorization_rules_program: None,
+            authorization_rules: None,
+        };
+
+        RevokeStandardV1Cpi::new(&self.token_metadata_program.to_account_info(), cpi_accounts)
+            .invoke_signed(signers_seeds)?;
+
         Ok(())
     }
 }
