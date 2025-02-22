@@ -22,6 +22,8 @@ import {
   TokenStandard,
   transferV1,
   verifyCollectionV1,
+  MPL_TOKEN_METADATA_PROGRAM_ID,
+  findMasterEditionPda,
 } from "@metaplex-foundation/mpl-token-metadata";
 
 import {
@@ -29,11 +31,14 @@ import {
   keypairIdentity,
   percentAmount,
   publicKey,
+  PublicKey as UmiPublickkey,
 } from "@metaplex-foundation/umi";
 import {
   getAccount,
   getAssociatedTokenAddress,
   getAssociatedTokenAddressSync,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 
 describe("solapet-capstone", () => {
@@ -54,6 +59,12 @@ describe("solapet-capstone", () => {
   let petDuel: PublicKey; // player 1 challanger
   let player1ATA: PublicKey;
   let player2ATA: PublicKey;
+  let nftMintAddress1: PublicKey;
+  let nftMintAddress2: PublicKey;
+  let metadata1: UmiPublickkey;
+  let metadata2: UmiPublickkey;
+  let masterEdition1: UmiPublickkey;
+  let masterEdition2: UmiPublickkey;
 
   // umi stuff
   const umi = createUmi(provider.connection.rpcEndpoint).use(
@@ -63,8 +74,6 @@ describe("solapet-capstone", () => {
   let umiAdmin = umi.eddsa.createKeypairFromSecretKey(admin.secretKey);
   umi.use(keypairIdentity(umiAdmin));
 
-  const nftMintPlayer1 = generateSigner(umi);
-  const nftMintPlayer2 = generateSigner(umi);
   const collectionMint = generateSigner(umi);
 
   before(async () => {
@@ -117,6 +126,50 @@ describe("solapet-capstone", () => {
       program.programId
     );
 
+    [nftMintAddress1] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("nft_mint"),
+        player1.publicKey.toBuffer(),
+        new PublicKey(collectionMint.publicKey).toBuffer(),
+      ],
+      program.programId
+    );
+
+    [nftMintAddress2] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("nft_mint"),
+        player2.publicKey.toBuffer(),
+        new PublicKey(collectionMint.publicKey).toBuffer(),
+      ],
+      program.programId
+    );
+
+    player1ATA = await getAssociatedTokenAddress(
+      nftMintAddress1,
+      player1.publicKey
+    );
+
+    player2ATA = await getAssociatedTokenAddress(
+      nftMintAddress2,
+      player2.publicKey
+    );
+
+    [metadata1] = findMetadataPda(umi, {
+      mint: publicKey(nftMintAddress1),
+    });
+
+    [metadata2] = findMetadataPda(umi, {
+      mint: publicKey(nftMintAddress2),
+    });
+
+    [masterEdition1] = findMasterEditionPda(umi, {
+      mint: publicKey(nftMintAddress1),
+    });
+
+    [masterEdition2] = findMasterEditionPda(umi, {
+      mint: publicKey(nftMintAddress2),
+    });
+
     console.log({
       admin: admin.publicKey.toString(),
       player1: player1.publicKey.toString(),
@@ -127,8 +180,6 @@ describe("solapet-capstone", () => {
       gameConfig: gameConfig.toString(),
       gameVault: gameVault.toString(),
       collectionMint: collectionMint.publicKey,
-      nftMintPlayer1: nftMintPlayer1.publicKey,
-      nftMintPlayer2: nftMintPlayer2.publicKey,
     });
 
     // create collection
@@ -189,89 +240,154 @@ describe("solapet-capstone", () => {
       })
       .signers([admin])
       .rpc();
+
+    const updatedConfig = await program.account.gameConfig.fetch(gameConfig);
+    expect(updatedConfig.fees.toString()).to.equal("5");
+    expect(updatedConfig.admin.toBase58()).to.equal(admin.publicKey.toBase58());
   });
 
-  it("Should successfully deposit an NFT to the game", async () => {
-    // create nfts
+  it("should mint a new nft pet for players", async () => {
+    // Find the NFT mint address
+    // const [nftMintAddress1] = PublicKey.findProgramAddressSync(
+    //   [
+    //     Buffer.from("nft_mint"),
+    //     player1.publicKey.toBuffer(),
+    //     new PublicKey(collectionMint.publicKey).toBuffer(),
+    //   ],
+    //   program.programId
+    // );
+
+    // const [nftMintAddress2] = PublicKey.findProgramAddressSync(
+    //   [
+    //     Buffer.from("nft_mint"),
+    //     player2.publicKey.toBuffer(),
+    //     new PublicKey(collectionMint.publicKey).toBuffer(),
+    //   ],
+    //   program.programId
+    // );
+
+    // const [metadata1] = findMetadataPda(umi, {
+    //   mint: publicKey(nftMintAddress1),
+    // });
+    // const [metadata2] = findMetadataPda(umi, {
+    //   mint: publicKey(nftMintAddress2),
+    // });
+
+    // const [masterEdition1] = findMasterEditionPda(umi, {
+    //   mint: publicKey(nftMintAddress1),
+    // });
+
+    // const [masterEdition2] = findMasterEditionPda(umi, {
+    //   mint: publicKey(nftMintAddress2),
+    // });
+
+    // player1ATA = await getAssociatedTokenAddress(
+    //   nftMintAddress1,
+    //   player1.publicKey
+    // );
+
+    // player2ATA = await getAssociatedTokenAddress(
+    //   nftMintAddress2,
+    //   player2.publicKey
+    // );
+
     await Promise.all([
-      createNft(umi, {
-        mint: nftMintPlayer1,
-        name: "player1",
-        symbol: "p1",
-        uri: "", // Add Arweave or IPFS metadata
-        sellerFeeBasisPoints: percentAmount(0),
-        collection: { key: collectionMint.publicKey, verified: false },
-      }).sendAndConfirm(umi, {
-        confirm: { commitment: "finalized" },
-        send: { commitment: "finalized" },
-      }),
-      createNft(umi, {
-        mint: nftMintPlayer2,
-        name: "player2",
-        symbol: "p2",
-        uri: "", // Add Arweave or IPFS metadata
-        sellerFeeBasisPoints: percentAmount(0),
-        collection: { key: collectionMint.publicKey, verified: false },
-      }).sendAndConfirm(umi, {
-        confirm: { commitment: "finalized" },
-        send: { commitment: "finalized" },
-      }),
+      program.methods
+        .mintPet("") // Empty URI string
+        .accountsPartial({
+          player: player1.publicKey,
+          collectionMint: collectionMint.publicKey,
+          gameConfig: gameConfig,
+          playerTokenAccount: player1ATA,
+          nftMint: nftMintAddress1,
+          metadata: metadata1,
+          masterEdition: masterEdition1,
+          metadataProgramInfo: MPL_TOKEN_METADATA_PROGRAM_ID,
+          sysvarInstructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([player1])
+        .rpc(),
+
+      program.methods
+        .mintPet("") // Empty URI string
+        .accountsPartial({
+          player: player2.publicKey,
+          collectionMint: collectionMint.publicKey,
+          gameConfig: gameConfig,
+          playerTokenAccount: player2ATA,
+          nftMint: nftMintAddress2,
+          metadata: metadata2,
+          masterEdition: masterEdition2,
+          metadataProgramInfo: MPL_TOKEN_METADATA_PROGRAM_ID,
+          sysvarInstructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([player2])
+        .rpc(),
     ]);
 
-    const metadata = findMetadataPda(umi, {
-      mint: nftMintPlayer1.publicKey,
-    });
+    // Verify NFTs were minted
+    const nftMintInfo1 = await provider.connection.getAccountInfo(
+      nftMintAddress1
+    );
+    const nftMintInfo2 = await provider.connection.getAccountInfo(
+      nftMintAddress2
+    );
 
-    const metadataTwo = findMetadataPda(umi, {
-      mint: nftMintPlayer2.publicKey,
-    });
+    assert.isNotNull(nftMintInfo1, "Player 1 NFT was not minted");
+    assert.isNotNull(nftMintInfo2, "Player 2 NFT was not minted");
 
-    // verify the nft with collection
-    await Promise.all([
-      verifyCollectionV1(umi, {
-        metadata,
-        collectionMint: collectionMint.publicKey,
-      }),
-
-      verifyCollectionV1(umi, {
-        metadata: metadataTwo,
-        collectionMint: collectionMint.publicKey,
-      }),
-
-      transferV1(umi, {
-        mint: nftMintPlayer1.publicKey,
-        authority: umi.identity,
-        destinationOwner: publicKey(player1.publicKey),
-        tokenStandard: TokenStandard.NonFungible,
-      }).sendAndConfirm(umi),
-
-      transferV1(umi, {
-        mint: nftMintPlayer2.publicKey,
-        authority: umi.identity,
-        destinationOwner: publicKey(player2.publicKey),
-        tokenStandard: TokenStandard.NonFungible,
-      }).sendAndConfirm(umi),
+    // Verify the token accounts (ATAs) were initialized properly
+    const [player1TokenAccount, player2TokenAccount] = await Promise.all([
+      getAccount(provider.connection, player1ATA),
+      getAccount(provider.connection, player2ATA),
     ]);
 
-    const [player1ATA, player2ATA] = await Promise.all([
-      getAssociatedTokenAddress(
-        new PublicKey(nftMintPlayer1.publicKey),
-        player1.publicKey
-      ),
-      getAssociatedTokenAddress(
-        new PublicKey(nftMintPlayer2.publicKey),
-        player2.publicKey
-      ),
-    ]);
+    // Check if accounts exist and contain the correct information
+    assert.isNotNull(
+      player1TokenAccount,
+      "Player 1 token account was not initialized"
+    );
+    assert.isNotNull(
+      player2TokenAccount,
+      "Player 2 token account was not initialized"
+    );
 
+    // Verify token accounts hold the correct NFT and amount (should be 1)
+    expect(player1TokenAccount.mint.toString()).to.equal(
+      nftMintAddress1.toString()
+    );
+    expect(player1TokenAccount.amount.toString()).to.equal("1");
+    expect(player1TokenAccount.owner.toString()).to.equal(
+      player1.publicKey.toString()
+    );
+
+    expect(player2TokenAccount.mint.toString()).to.equal(
+      nftMintAddress2.toString()
+    );
+    expect(player2TokenAccount.amount.toString()).to.equal("1");
+    expect(player2TokenAccount.owner.toString()).to.equal(
+      player2.publicKey.toString()
+    );
+  });
+
+  it("Should freeze the nfts and init players", async () => {
     await Promise.all([
       program.methods
         .initPlayer()
         .accountsPartial({
           player: player1.publicKey,
-          playerAta: player1ATA,
           collectionMint: collectionMint.publicKey,
-          nftMint: nftMintPlayer1.publicKey,
+          nftMint: nftMintAddress1,
+          playerAta: player1ATA,
+          masterEdition: masterEdition1,
+          config: gameConfig,
+          metadata: metadata1,
+          tokenMetadataProgram: MPL_TOKEN_METADATA_PROGRAM_ID,
+          sysvarInstructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+          petStats: petStat1,
+          tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([player1])
         .rpc(),
@@ -280,26 +396,35 @@ describe("solapet-capstone", () => {
         .initPlayer()
         .accountsPartial({
           player: player2.publicKey,
-          playerAta: player2ATA,
           collectionMint: collectionMint.publicKey,
-          nftMint: nftMintPlayer2.publicKey,
+          nftMint: nftMintAddress2,
+          playerAta: player2ATA,
+          masterEdition: masterEdition2,
+          config: gameConfig,
+          metadata: metadata2,
+          tokenMetadataProgram: MPL_TOKEN_METADATA_PROGRAM_ID,
+          sysvarInstructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+          petStats: petStat2,
+          tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([player2])
         .rpc(),
     ]);
 
-    const [player1pet, player2pet] = await Promise.all([
-      await program.account.petStats.fetch(petStat1),
-      await program.account.petStats.fetch(petStat2),
+    // Verify pet stats were initialized correctly
+    const [player1PetStats, player2PetStats] = await Promise.all([
+      program.account.petStats.fetch(petStat1),
+      program.account.petStats.fetch(petStat2),
     ]);
 
-    expect(player1pet.energy.toString()).to.equal("100");
-    expect(player1pet.hygiene.toString()).to.equal("100");
-    expect(player1pet.hunger.toString()).to.equal("100");
+    // Check that pet stats are properly initialized with default values
+    expect(player1PetStats.energy.toString()).to.equal("100");
+    expect(player1PetStats.hygiene.toString()).to.equal("100");
+    expect(player1PetStats.hunger.toString()).to.equal("100");
 
-    expect(player2pet.energy.toString()).to.equal("100");
-    expect(player2pet.hygiene.toString()).to.equal("100");
-    expect(player2pet.hunger.toString()).to.equal("100");
+    expect(player2PetStats.energy.toString()).to.equal("100");
+    expect(player2PetStats.hygiene.toString()).to.equal("100");
+    expect(player2PetStats.hunger.toString()).to.equal("100");
   });
 
   it("Should initialize a new duel challenge", async () => {
@@ -598,7 +723,6 @@ describe("solapet-capstone", () => {
   //     gameConfig,
   //     true
   //   );
-  //   console.log(await getAccount(provider.connection, gameAta));
   //   await program.methods
   //     .closePlayer()
   //     .accountsPartial({
