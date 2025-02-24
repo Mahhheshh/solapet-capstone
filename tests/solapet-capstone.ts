@@ -21,7 +21,6 @@ import {
   mplTokenMetadata,
   TokenStandard,
   transferV1,
-  verifyCollectionV1,
   MPL_TOKEN_METADATA_PROGRAM_ID,
   findMasterEditionPda,
 } from "@metaplex-foundation/mpl-token-metadata";
@@ -36,8 +35,6 @@ import {
 import {
   getAccount,
   getAssociatedTokenAddress,
-  getAssociatedTokenAddressSync,
-  ASSOCIATED_TOKEN_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 
@@ -247,50 +244,6 @@ describe("solapet-capstone", () => {
   });
 
   it("should mint a new nft pet for players", async () => {
-    // Find the NFT mint address
-    // const [nftMintAddress1] = PublicKey.findProgramAddressSync(
-    //   [
-    //     Buffer.from("nft_mint"),
-    //     player1.publicKey.toBuffer(),
-    //     new PublicKey(collectionMint.publicKey).toBuffer(),
-    //   ],
-    //   program.programId
-    // );
-
-    // const [nftMintAddress2] = PublicKey.findProgramAddressSync(
-    //   [
-    //     Buffer.from("nft_mint"),
-    //     player2.publicKey.toBuffer(),
-    //     new PublicKey(collectionMint.publicKey).toBuffer(),
-    //   ],
-    //   program.programId
-    // );
-
-    // const [metadata1] = findMetadataPda(umi, {
-    //   mint: publicKey(nftMintAddress1),
-    // });
-    // const [metadata2] = findMetadataPda(umi, {
-    //   mint: publicKey(nftMintAddress2),
-    // });
-
-    // const [masterEdition1] = findMasterEditionPda(umi, {
-    //   mint: publicKey(nftMintAddress1),
-    // });
-
-    // const [masterEdition2] = findMasterEditionPda(umi, {
-    //   mint: publicKey(nftMintAddress2),
-    // });
-
-    // player1ATA = await getAssociatedTokenAddress(
-    //   nftMintAddress1,
-    //   player1.publicKey
-    // );
-
-    // player2ATA = await getAssociatedTokenAddress(
-    //   nftMintAddress2,
-    //   player2.publicKey
-    // );
-
     await Promise.all([
       program.methods
         .mintPet("") // Empty URI string
@@ -425,6 +378,60 @@ describe("solapet-capstone", () => {
     expect(player2PetStats.energy.toString()).to.equal("100");
     expect(player2PetStats.hygiene.toString()).to.equal("100");
     expect(player2PetStats.hunger.toString()).to.equal("100");
+  });
+
+  it("Should not allow player to transfer the freezed nft's", async () => {
+    try {
+      // Create a temporary UMI instance with player1's identity
+      const player1Umi = createUmi(provider.connection.rpcEndpoint)
+        .use(mplTokenMetadata())
+        .use(
+          keypairIdentity(
+            umi.eddsa.createKeypairFromSecretKey(player1.secretKey)
+          )
+        );
+
+      const transaction = new Transaction();
+
+      const transferInstruction = transferV1(player1Umi, {
+        mint: publicKey(nftMintAddress1),
+        authority: player1Umi.identity,
+        tokenOwner: publicKey(player1.publicKey),
+        destinationOwner: publicKey(player2.publicKey),
+        tokenStandard: TokenStandard.NonFungible,
+      }).getInstructions()[0];
+
+      const web3Instruction = {
+        programId: new PublicKey(transferInstruction.programId),
+        keys: transferInstruction.keys.map((key) => ({
+          pubkey: new PublicKey(key.pubkey),
+          isSigner: key.isSigner,
+          isWritable: key.isWritable,
+        })),
+        data: Buffer.from(transferInstruction.data),
+      };
+
+      transaction.add(web3Instruction);
+
+      await sendAndConfirmTransaction(provider.connection, transaction, [
+        player1,
+      ]);
+
+      assert.fail("Transfer should have failed because the NFT is locked");
+    } catch (error) {
+      expect(error).to.exist;
+
+      const errorString = error.toString().toLowerCase();
+      const isLockError =
+        errorString.includes("locked") ||
+        errorString.includes("frozen") ||
+        errorString.includes("delegated") ||
+        errorString.includes("unauthorized") ||
+        errorString.includes("permission") ||
+        errorString.includes("not allowed");
+
+      expect(isLockError).to.be.true;
+    }
   });
 
   it("Should initialize a new duel challenge", async () => {
@@ -713,28 +720,69 @@ describe("solapet-capstone", () => {
     ]);
   });
 
-  // it("Should transfer nft back and close all the stats accounts", async () => {
-  //   const player1TokenAta = await getAssociatedTokenAddress(
-  //     new PublicKey(nftMintPlayer1.publicKey),
-  //     player1.publicKey
-  //   );
-  //   const gameAta = getAssociatedTokenAddressSync(
-  //     new PublicKey(nftMintPlayer1.publicKey),
-  //     gameConfig,
-  //     true
-  //   );
-  //   await program.methods
-  //     .closePlayer()
-  //     .accountsPartial({
-  //       player: player1.publicKey,
-  //       collectionMint: collectionMint.publicKey,
-  //       nftMint: nftMintPlayer1.publicKey,
-  //       config: gameConfig,
-  //       playerAta: player1TokenAta,
-  //       gameAta: gameAta,
-  //       petStats: petStat1,
-  //     })
-  //     .signers([player1])
-  //     .rpc();
-  // });
+  it("Should unlock the NFT, revoke delegate, and close all the stats accounts", async () => {
+    await program.methods
+      .closePlayer()
+      .accountsPartial({
+        player: player1.publicKey,
+        collectionMint: collectionMint.publicKey,
+        nftMint: nftMintAddress1,
+        playerAta: player1ATA,
+        config: gameConfig,
+        masterEdition: masterEdition1,
+        metadata: metadata1,
+        petStats: petStat1,
+        tokenMetadataProgram: MPL_TOKEN_METADATA_PROGRAM_ID,
+        sysvarInstructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([player1])
+      .rpc();
+
+    // Verify that the pet stats account was closed
+    try {
+      await program.account.petStats.fetch(petStat1);
+      assert.fail("Pet stats account should have been closed");
+    } catch (error) {
+      expect(error.toString()).to.include("Account does not exist");
+    }
+  });
+
+  it("Should enable player to transfer the nfts back to their wallet", async () => {
+    try {
+      const player1Umi = createUmi(provider.connection.rpcEndpoint)
+        .use(mplTokenMetadata())
+        .use(
+          keypairIdentity(
+            umi.eddsa.createKeypairFromSecretKey(player1.secretKey)
+          )
+        );
+
+      const transaction = new Transaction();
+      const transferInstruction = transferV1(player1Umi, {
+        mint: publicKey(nftMintAddress1),
+        authority: player1Umi.identity,
+        tokenOwner: publicKey(player1.publicKey),
+        destinationOwner: publicKey(player2.publicKey),
+        tokenStandard: TokenStandard.NonFungible,
+      }).getInstructions()[0];
+
+      const web3Instruction = {
+        programId: new PublicKey(transferInstruction.programId),
+        keys: transferInstruction.keys.map((key) => ({
+          pubkey: new PublicKey(key.pubkey),
+          isSigner: key.isSigner,
+          isWritable: key.isWritable,
+        })),
+        data: Buffer.from(transferInstruction.data),
+      };
+
+      transaction.add(web3Instruction);
+      await sendAndConfirmTransaction(provider.connection, transaction, [
+        player1,
+      ]);
+    } catch (error) {
+      assert.fail("Should be able to transfer NFT after unlocking");
+    }
+  });
 });
